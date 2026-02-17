@@ -44,22 +44,33 @@ End users do **not** need Go if you ship the binary.
 
 ```powershell
 porkctl version
-porkctl ping
-porkctl check <domain>
-porkctl check-bulk <d1> <d2> ...
-porkctl register <domain>
-porkctl pricing
+porkctl ping [--json]
+porkctl check <domain> [--json]
+porkctl check-bulk <d1> <d2> ... [--json]
+porkctl register <domain> [--json]
+porkctl pricing [--json]
 ```
+
+Global flags:
+
+- `--json` for machine-readable output envelope.
 
 ## Credentials
 
-`porkctl` looks for env files in this order:
+Credential sources (highest priority first):
 
-1. `PORKCTL_ENV_FILE` (explicit path)
-2. `C:/dev/_env/secrets/porkbun.env`
-3. `./porkbun.env`
-4. `./.env`
-5. `C:/dev/_skills/porkbun/.env` (legacy fallback)
+1. Env vars: `PORKBUN_API_KEY` + `PORKBUN_SECRET_KEY` (or `PORKCTL_API_KEY` + `PORKCTL_SECRET_KEY`)
+2. `PORKCTL_ENV_FILE` (explicit path)
+3. `C:/dev/_env/secrets/porkbun.env`
+4. `./porkbun.env`
+5. `./.env`
+6. `C:/dev/_skills/porkbun/.env` (legacy fallback)
+
+## JSON Output
+
+- Success: `{"ok":true,"data":...}`
+- Error: `{"ok":false,"error":{"code":"...","message":"..."}}`
+- Set `PORKCTL_JSON_PRETTY=1` for indented output.
 
 Required keys:
 
@@ -71,7 +82,7 @@ PORKBUN_SECRET_KEY=sk1_...
 ## Troubleshooting
 
 - Missing keys / env file:
-  Set `PORKCTL_ENV_FILE` or create `C:/dev/_env/secrets/porkbun.env` with required keys.
+  Set env vars directly (`PORKBUN_API_KEY`, `PORKBUN_SECRET_KEY`) or set `PORKCTL_ENV_FILE`.
 - API error responses:
   Re-run with a known valid domain and confirm API keys.
 

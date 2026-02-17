@@ -19,6 +19,12 @@ const apiBase = "https://api.porkbun.com/api/json/v3"
 
 var version = "dev"
 
+const defaultHTTPTimeout = 30 * time.Second
+
+type Ctx struct{ JSON bool }
+
+var porkHTTPClient = &http.Client{Timeout: defaultHTTPTimeout}
+
 type apiKeys struct {
 	APIKey    string
 	SecretKey string
@@ -32,51 +38,95 @@ type bulkResult struct {
 }
 
 func main() {
-	if len(os.Args) < 2 {
+	cmd, args, ctx := parseArgs(os.Args[1:])
+	if cmd == "" {
 		printUsage()
 		os.Exit(1)
 	}
-
-	cmd := os.Args[1]
-	args := os.Args[2:]
 
 	var err error
 	switch cmd {
 	case "version":
-		fmt.Println(version)
+		if ctx.JSON {
+			_ = emitJSON(map[string]any{"ok": true, "data": map[string]any{"version": version}})
+		} else {
+			fmt.Println(version)
+		}
 		return
 	case "ping":
-		err = runPing()
+		err = runPing(ctx)
 	case "check":
 		if len(args) != 1 {
-			fmt.Println("Usage: porkctl check <domain>")
-			fmt.Println("Example: porkctl check clau.de")
-			os.Exit(1)
+			err = errors.New("Usage: porkctl check <domain>")
+			break
 		}
-		err = runCheck(args[0])
+		err = runCheck(args[0], ctx)
 	case "check-bulk":
 		if len(args) == 0 {
-			fmt.Println("Usage: porkctl check-bulk <domain1> <domain2> ...")
-			os.Exit(1)
+			err = errors.New("Usage: porkctl check-bulk <domain1> <domain2> ...")
+			break
 		}
-		err = runCheckBulk(args)
+		err = runCheckBulk(args, ctx)
 	case "register":
 		if len(args) != 1 {
-			fmt.Println("Usage: porkctl register <domain>")
-			os.Exit(1)
+			err = errors.New("Usage: porkctl register <domain>")
+			break
 		}
-		err = runRegister(args[0])
+		err = runRegister(args[0], ctx)
 	case "pricing":
-		err = runPricing()
+		err = runPricing(ctx)
 	default:
-		printUsage()
-		os.Exit(1)
+		err = fmt.Errorf("unknown command %q", cmd)
 	}
 
 	if err != nil {
-		fmt.Printf("ERROR: %v\n", err)
+		if ctx.JSON {
+			_ = emitJSON(map[string]any{
+				"ok": false,
+				"error": map[string]any{
+					"code":    "FATAL",
+					"message": err.Error(),
+				},
+			})
+			os.Exit(1)
+		}
+		fmt.Fprintln(os.Stderr, "ERROR:", err)
 		os.Exit(1)
 	}
+}
+
+func parseArgs(argv []string) (string, []string, Ctx) {
+	ctx := Ctx{}
+	args := make([]string, 0, len(argv))
+	for _, arg := range argv {
+		if arg == "--json" {
+			ctx.JSON = true
+			continue
+		}
+		args = append(args, arg)
+	}
+	if len(args) == 0 {
+		return "", nil, ctx
+	}
+	return args[0], args[1:], ctx
+}
+
+func emitJSON(v any) error {
+	pretty := strings.TrimSpace(os.Getenv("PORKCTL_JSON_PRETTY")) == "1"
+	var (
+		b   []byte
+		err error
+	)
+	if pretty {
+		b, err = json.MarshalIndent(v, "", "  ")
+	} else {
+		b, err = json.Marshal(v)
+	}
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(b))
+	return nil
 }
 
 func printUsage() {
@@ -89,14 +139,27 @@ func printUsage() {
 	fmt.Println("  check-bulk <d1> <d2> ...      Check multiple domains")
 	fmt.Println("  register <domain>             Register a domain")
 	fmt.Println("  pricing                       Show TLD pricing (cheapest 50)")
+	fmt.Println()
+	fmt.Println("Global flags:")
+	fmt.Println("  --json                        Output JSON envelope")
 }
 
-func runPing() error {
+func runPing(ctx Ctx) error {
 	data, err := apiPost("/ping", nil)
 	if err != nil {
 		return err
 	}
 	status := asString(data["status"])
+	if ctx.JSON {
+		return emitJSON(map[string]any{
+			"ok": true,
+			"data": map[string]any{
+				"status":  strings.EqualFold(status, "SUCCESS"),
+				"ip":      fallback(asString(data["yourIp"]), "unknown"),
+				"message": fallback(asString(data["message"]), "Unknown error"),
+			},
+		})
+	}
 	if strings.EqualFold(status, "SUCCESS") {
 		fmt.Println("STATUS: OK")
 		fmt.Printf("IP: %s\n", fallback(asString(data["yourIp"]), "unknown"))
@@ -107,14 +170,25 @@ func runPing() error {
 	return nil
 }
 
-func runCheck(domain string) error {
+func runCheck(domain string, ctx Ctx) error {
 	data, err := apiPost("/domain/checkDomain/"+domain, nil)
 	if err != nil {
-		fmt.Printf("DOMAIN: %s\n", domain)
-		fmt.Printf("ERROR: %v\n", err)
-		return nil
+		return err
 	}
 	avail, price, renewal := parseCheckResponse(data)
+	msg := asString(data["message"])
+	if ctx.JSON {
+		out := map[string]any{
+			"domain":         domain,
+			"available":      avail,
+			"register_price": price,
+			"renewal_price":  renewal,
+		}
+		if msg != "" {
+			out["message"] = msg
+		}
+		return emitJSON(map[string]any{"ok": true, "data": out})
+	}
 	fmt.Printf("DOMAIN: %s\n", domain)
 	if avail {
 		fmt.Println("AVAILABLE: yes")
@@ -127,15 +201,16 @@ func runCheck(domain string) error {
 	if renewal != "-" {
 		fmt.Printf("RENEWAL_PRICE: %s\n", renewal)
 	}
-	msg := asString(data["message"])
 	if msg != "" && !avail {
 		fmt.Printf("MESSAGE: %s\n", msg)
 	}
 	return nil
 }
 
-func runCheckBulk(domains []string) error {
-	fmt.Printf("CHECKING: %d domains\n\n", len(domains))
+func runCheckBulk(domains []string, ctx Ctx) error {
+	if !ctx.JSON {
+		fmt.Printf("CHECKING: %d domains\n\n", len(domains))
+	}
 	results := make([]bulkResult, 0, len(domains))
 
 	for i, d := range domains {
@@ -158,6 +233,24 @@ func runCheckBulk(domains []string) error {
 		return len(results[i].Domain) < len(results[j].Domain)
 	})
 
+	availCount := 0
+	for _, r := range results {
+		if r.Available {
+			availCount++
+		}
+	}
+
+	if ctx.JSON {
+		return emitJSON(map[string]any{
+			"ok": true,
+			"data": map[string]any{
+				"count":           len(results),
+				"available_count": availCount,
+				"results":         results,
+			},
+		})
+	}
+
 	maxDomain := len("DOMAIN")
 	for _, r := range results {
 		if len(r.Domain) > maxDomain {
@@ -167,13 +260,10 @@ func runCheckBulk(domains []string) error {
 	header := fmt.Sprintf("%-*s  AVAIL  REG_PRICE  RENEWAL", maxDomain, "DOMAIN")
 	fmt.Println(header)
 	fmt.Println(strings.Repeat("-", len(header)))
-
-	availCount := 0
 	for _, r := range results {
 		avail := "no"
 		if r.Available {
 			avail = "YES"
-			availCount++
 		}
 		fmt.Printf("%-*s  %-5s  %-9s  %s\n", maxDomain, r.Domain, avail, r.Price, r.Renewal)
 	}
@@ -182,19 +272,22 @@ func runCheckBulk(domains []string) error {
 	return nil
 }
 
-func runRegister(domain string) error {
+func runRegister(domain string, ctx Ctx) error {
 	checkData, err := apiPost("/domain/checkDomain/"+domain, nil)
 	if err != nil {
 		return err
 	}
 	avail, price, renewal := parseCheckResponse(checkData)
-
-	fmt.Printf("DOMAIN: %s\n", domain)
 	if !avail {
-		fmt.Println("AVAILABLE: no")
-		fmt.Println("Cannot register - domain is not available.")
+		if !ctx.JSON {
+			fmt.Printf("DOMAIN: %s\n", domain)
+			fmt.Println("AVAILABLE: no")
+			fmt.Println("Cannot register - domain is not available.")
+		}
 		return errors.New("domain unavailable")
 	}
+
+	fmt.Printf("DOMAIN: %s\n", domain)
 	fmt.Println("AVAILABLE: yes")
 	if price != "-" {
 		fmt.Printf("REGISTER_PRICE: %s\n", price)
@@ -225,6 +318,19 @@ func runRegister(domain string) error {
 	}
 
 	if strings.EqualFold(asString(regData["status"]), "SUCCESS") {
+		if ctx.JSON {
+			return emitJSON(map[string]any{
+				"ok": true,
+				"data": map[string]any{
+					"domain":         domain,
+					"available":      true,
+					"registered":     true,
+					"register_price": price,
+					"renewal_price":  renewal,
+					"message":        fallback(asString(regData["message"]), "Domain registered successfully"),
+				},
+			})
+		}
 		fmt.Println("REGISTERED: yes")
 		fmt.Printf("MESSAGE: %s\n", fallback(asString(regData["message"]), "Domain registered successfully"))
 		return nil
@@ -232,10 +338,10 @@ func runRegister(domain string) error {
 
 	fmt.Println("REGISTERED: no")
 	fmt.Printf("ERROR: %s\n", fallback(asString(regData["message"]), "Registration failed"))
-	return errors.New("registration failed")
+	return errors.New(fallback(asString(regData["message"]), "registration failed"))
 }
 
-func runPricing() error {
+func runPricing(ctx Ctx) error {
 	data, err := apiGet("/pricing/get")
 	if err != nil {
 		return err
@@ -270,6 +376,15 @@ func runPricing() error {
 	sort.Slice(rows, func(i, j int) bool { return rows[i].RegNum < rows[j].RegNum })
 	if len(rows) > 50 {
 		rows = rows[:50]
+	}
+	if ctx.JSON {
+		return emitJSON(map[string]any{
+			"ok": true,
+			"data": map[string]any{
+				"count": len(rows),
+				"rows":  rows,
+			},
+		})
 	}
 
 	maxTLD := len("TLD")
@@ -307,7 +422,12 @@ func apiPost(endpoint string, body map[string]any) (map[string]any, error) {
 		return nil, err
 	}
 
-	resp, err := http.Post(apiBase+endpoint, "application/json", bytes.NewReader(b))
+	req, err := http.NewRequest(http.MethodPost, apiBase+endpoint, bytes.NewReader(b))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := porkHTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -330,7 +450,11 @@ func apiPost(endpoint string, body map[string]any) (map[string]any, error) {
 }
 
 func apiGet(endpoint string) (map[string]any, error) {
-	resp, err := http.Get(apiBase + endpoint)
+	req, err := http.NewRequest(http.MethodGet, apiBase+endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := porkHTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -397,6 +521,10 @@ func parseCheckResponse(data map[string]any) (bool, string, string) {
 }
 
 func loadKeys() (apiKeys, error) {
+	if apiKey, secretKey := resolveKeysFromEnv(); apiKey != "" && secretKey != "" {
+		return apiKeys{APIKey: apiKey, SecretKey: secretKey}, nil
+	}
+
 	candidates := []string{}
 	if p := strings.TrimSpace(os.Getenv("PORKCTL_ENV_FILE")); p != "" {
 		candidates = append(candidates, p)
@@ -432,6 +560,18 @@ func loadKeys() (apiKeys, error) {
 	}
 
 	return apiKeys{APIKey: apiKey, SecretKey: secretKey}, nil
+}
+
+func resolveKeysFromEnv() (string, string) {
+	apiKey := firstNonEmpty(
+		os.Getenv("PORKBUN_API_KEY"),
+		os.Getenv("PORKCTL_API_KEY"),
+	)
+	secretKey := firstNonEmpty(
+		os.Getenv("PORKBUN_SECRET_KEY"),
+		os.Getenv("PORKCTL_SECRET_KEY"),
+	)
+	return strings.TrimSpace(apiKey), strings.TrimSpace(secretKey)
 }
 
 func parseEnv(content string) map[string]string {
@@ -501,5 +641,11 @@ func fallback(v, d string) string {
 	return v
 }
 
-
-
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
+}

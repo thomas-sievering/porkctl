@@ -23,15 +23,15 @@ If mode is missing, default to `check`.
 ## Examples
 
 - User says: "check nex.us"
-  - Run: `porkctl check nex.us`
+  - Run: `porkctl check nex.us --json`
 - User says: "check these domains" + list
-  - Run: `porkctl check-bulk <domain1> <domain2> ...`
+  - Run: `porkctl check-bulk <domain1> <domain2> ... --json`
 - User says: "register nex.us"
-  - Run: `porkctl register nex.us`
+  - Run: `porkctl register nex.us --json`
 - User says: "is Porkbun auth working?"
-  - Run: `porkctl ping`
+  - Run: `porkctl ping --json`
 - User says: "show cheapest TLDs"
-  - Run: `porkctl pricing`
+  - Run: `porkctl pricing --json`
 
 ## Runtime Context (Optional)
 
@@ -45,7 +45,7 @@ Use these quick checks when troubleshooting local setup:
 ### 1) Validate credentials (optional quick check)
 
 ```powershell
-porkctl ping
+porkctl ping --json
 ```
 
 ### 2) Check availability
@@ -53,13 +53,13 @@ porkctl ping
 Single domain:
 
 ```powershell
-porkctl check <domain>
+porkctl check <domain> --json
 ```
 
 Bulk:
 
 ```powershell
-porkctl check-bulk <d1> <d2> ...
+porkctl check-bulk <d1> <d2> ... --json
 ```
 
 ### 3) Register (high-impact action)
@@ -67,13 +67,13 @@ porkctl check-bulk <d1> <d2> ...
 Always show the domain and price from `check` output first, then confirm with user before executing:
 
 ```powershell
-porkctl register <domain>
+porkctl register <domain> --json
 ```
 
 ### 4) Pricing view
 
 ```powershell
-porkctl pricing
+porkctl pricing --json
 ```
 
 ### 5) Return a concise result summary
@@ -85,12 +85,13 @@ After running commands, report:
 
 ## Credentials
 
-`porkctl` resolves env files in this order:
-1. `PORKCTL_ENV_FILE`
-2. `../_env/secrets/porkbun.env`
-3. `./porkbun.env`
-4. `./.env`
-5. `../_skills/porkbun/.env` (legacy fallback)
+`porkctl` resolves credentials in this order:
+1. `PORKBUN_API_KEY` + `PORKBUN_SECRET_KEY` (or `PORKCTL_API_KEY` + `PORKCTL_SECRET_KEY`)
+2. `PORKCTL_ENV_FILE`
+3. `../_env/secrets/porkbun.env`
+4. `./porkbun.env`
+5. `./.env`
+6. `../_skills/porkbun/.env` (legacy fallback)
 
 Required keys:
 
