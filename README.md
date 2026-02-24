@@ -49,6 +49,10 @@ porkctl check <domain> [--json]
 porkctl check-bulk <d1> <d2> ... [--json]
 porkctl register <domain> [--json]
 porkctl pricing [--json]
+porkctl auth setup [--json]
+porkctl auth login [--json]
+porkctl auth status [--json]
+porkctl auth logout [--json]
 ```
 
 Global flags:
@@ -57,20 +61,34 @@ Global flags:
 
 ## Credentials
 
+The quickest way to set up credentials:
+
+```powershell
+porkctl auth setup    # shows step-by-step instructions
+porkctl auth login    # prompts for API key + secret, saves to config
+porkctl auth status   # verify credentials are configured
+```
+
 Credential sources (highest priority first):
 
 1. Env vars: `PORKBUN_API_KEY` + `PORKBUN_SECRET_KEY` (or `PORKCTL_API_KEY` + `PORKCTL_SECRET_KEY`)
 2. `PORKCTL_ENV_FILE` (explicit path)
-3. `C:/dev/_env/secrets/porkbun.env`
+3. Config file: `<os.UserConfigDir>/porkctl/config.json` (written by `auth login`)
 4. `./porkbun.env`
 5. `./.env`
-6. `C:/dev/_skills/porkbun/.env` (legacy fallback)
+
+To remove stored credentials:
+
+```powershell
+porkctl auth logout
+```
 
 ## JSON Output
 
-- Success: `{"ok":true,"data":...}`
+- Success: `{"ok":true,"data":...}` (when `PORKCTL_JSON_ENVELOPE=1`)
 - Error: `{"ok":false,"error":{"code":"...","message":"..."}}`
 - Set `PORKCTL_JSON_PRETTY=1` for indented output.
+- Set `PORKCTL_JSON_ENVELOPE=1` to wrap output in `{"ok":true,"data":...}`.
 
 Required keys:
 
@@ -81,20 +99,19 @@ PORKBUN_SECRET_KEY=sk1_...
 
 ## Troubleshooting
 
-- Missing keys / env file:
-  Set env vars directly (`PORKBUN_API_KEY`, `PORKBUN_SECRET_KEY`) or set `PORKCTL_ENV_FILE`.
+- Missing keys: Run `porkctl auth setup` for instructions, or set env vars directly.
 - API error responses:
-  Re-run with a known valid domain and confirm API keys.
+  Re-run with a known valid domain and confirm API keys via `porkctl auth status`.
 
 ## Automated Releases
 
 This repo includes `.github/workflows/release.yml`.
 
-On tag push (`v*`), GitHub Actions will:
+On tag push (`v*`), GitHub Actions will build versioned releases. On main push, prereleases are published automatically.
 
 - Build binaries for Windows/Linux/macOS (amd64 + arm64)
 - Package assets (`.zip` for Windows, `.tar.gz` for Linux/macOS)
-- Publish them to the GitHub Release for that tag
+- Publish them to the GitHub Release
 
 Publish a release:
 
