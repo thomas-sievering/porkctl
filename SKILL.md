@@ -9,7 +9,7 @@ allowed-tools: Read, Bash
 
 # porkctl Skill
 
-Agent workflow for using `./porkctl.exe` for Porkbun domain operations.
+Agent workflow for using `porkctl.exe` for Porkbun domain operations.
 
 ## Arguments
 
@@ -23,15 +23,15 @@ If mode is missing, default to `check`.
 ## Examples
 
 - User says: "check nex.us"
-  - Run: `./porkctl.exe check nex.us --json`
+  - Run: `porkctl.exe check nex.us --json`
 - User says: "check these domains" + list
-  - Run: `./porkctl.exe check-bulk <domain1> <domain2> ... --json`
+  - Run: `porkctl.exe check-bulk <domain1> <domain2> ... --json`
 - User says: "register nex.us"
-  - Run: `./porkctl.exe register nex.us --json`
+  - Run: `porkctl.exe register nex.us --json`
 - User says: "is Porkbun auth working?"
-  - Run: `./porkctl.exe ping --json`
+  - Run: `porkctl.exe ping --json`
 - User says: "show cheapest TLDs"
-  - Run: `./porkctl.exe pricing --json`
+  - Run: `porkctl.exe pricing --json`
 
 ## Runtime Context (Optional)
 
@@ -45,7 +45,7 @@ Use these quick checks when troubleshooting local setup:
 ### 1) Validate credentials (optional quick check)
 
 ```powershell
-./porkctl.exe ping --json
+porkctl.exe ping --json
 ```
 
 ### 2) Check availability
@@ -53,13 +53,13 @@ Use these quick checks when troubleshooting local setup:
 Single domain:
 
 ```powershell
-./porkctl.exe check <domain> --json
+porkctl.exe check <domain> --json
 ```
 
 Bulk:
 
 ```powershell
-./porkctl.exe check-bulk <d1> <d2> ... --json
+porkctl.exe check-bulk <d1> <d2> ... --json
 ```
 
 ### 3) Register (high-impact action)
@@ -67,13 +67,13 @@ Bulk:
 Always show the domain and price from `check` output first, then confirm with user before executing:
 
 ```powershell
-./porkctl.exe register <domain> --json
+porkctl.exe register <domain> --json
 ```
 
 ### 4) Pricing view
 
 ```powershell
-./porkctl.exe pricing --json
+porkctl.exe pricing --json
 ```
 
 ### 5) Return a concise result summary
@@ -85,7 +85,7 @@ After running commands, report:
 
 ## Credentials
 
-`./porkctl.exe` resolves credentials in this order:
+`porkctl.exe` resolves credentials in this order:
 1. `PORKBUN_API_KEY` + `PORKBUN_SECRET_KEY` (or `PORKCTL_API_KEY` + `PORKCTL_SECRET_KEY`)
 2. `PORKCTL_ENV_FILE`
 3. `../_env/secrets/porkbun.env`

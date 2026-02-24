@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,97 +23,59 @@ var version = "dev"
 
 const defaultHTTPTimeout = 30 * time.Second
 
-type Ctx struct{ JSON bool }
-
 var porkHTTPClient = &http.Client{Timeout: defaultHTTPTimeout}
 
 type apiKeys struct {
-	APIKey    string
-	SecretKey string
+	APIKey    string `json:"api_key"`
+	SecretKey string `json:"secret_key"`
 }
 
 type bulkResult struct {
-	Domain    string
-	Available bool
-	Price     string
-	Renewal   string
+	Domain    string `json:"domain"`
+	Available bool   `json:"available"`
+	Price     string `json:"price"`
+	Renewal   string `json:"renewal"`
 }
 
 func main() {
-	cmd, args, ctx := parseArgs(os.Args[1:])
-	if cmd == "" {
-		printUsage()
+	if err := run(os.Args[1:]); err != nil {
+		printJSONError(err)
 		os.Exit(1)
 	}
+}
 
-	var err error
+func run(argv []string) error {
+	if len(argv) == 0 || argv[0] == "help" {
+		printUsage()
+		return nil
+	}
+
+	cmd := argv[0]
+	args := argv[1:]
+
 	switch cmd {
 	case "version":
-		if ctx.JSON {
-			_ = emitJSON(map[string]any{"ok": true, "data": map[string]any{"version": version}})
-		} else {
-			fmt.Println(version)
-		}
-		return
+		return runVersion(args)
 	case "ping":
-		err = runPing(ctx)
+		return runPing(args)
 	case "check":
-		if len(args) != 1 {
-			err = errors.New("Usage: porkctl check <domain>")
-			break
-		}
-		err = runCheck(args[0], ctx)
+		return runCheck(args)
 	case "check-bulk":
-		if len(args) == 0 {
-			err = errors.New("Usage: porkctl check-bulk <domain1> <domain2> ...")
-			break
-		}
-		err = runCheckBulk(args, ctx)
+		return runCheckBulk(args)
 	case "register":
-		if len(args) != 1 {
-			err = errors.New("Usage: porkctl register <domain>")
-			break
-		}
-		err = runRegister(args[0], ctx)
+		return runRegister(args)
 	case "pricing":
-		err = runPricing(ctx)
+		return runPricing(args)
+	case "auth":
+		return runAuth(args)
 	default:
-		err = fmt.Errorf("unknown command %q", cmd)
-	}
-
-	if err != nil {
-		if ctx.JSON {
-			_ = emitJSON(map[string]any{
-				"ok": false,
-				"error": map[string]any{
-					"code":    "FATAL",
-					"message": err.Error(),
-				},
-			})
-			os.Exit(1)
-		}
-		fmt.Fprintln(os.Stderr, "ERROR:", err)
-		os.Exit(1)
+		return fmt.Errorf("unknown command %q", cmd)
 	}
 }
 
-func parseArgs(argv []string) (string, []string, Ctx) {
-	ctx := Ctx{}
-	args := make([]string, 0, len(argv))
-	for _, arg := range argv {
-		if arg == "--json" {
-			ctx.JSON = true
-			continue
-		}
-		args = append(args, arg)
-	}
-	if len(args) == 0 {
-		return "", nil, ctx
-	}
-	return args[0], args[1:], ctx
-}
+// --- JSON helpers ---
 
-func emitJSON(v any) error {
+func writeJSON(v any) error {
 	pretty := strings.TrimSpace(os.Getenv("PORKCTL_JSON_PRETTY")) == "1"
 	var (
 		b   []byte
@@ -129,6 +93,26 @@ func emitJSON(v any) error {
 	return nil
 }
 
+func printJSON(v any) error {
+	envelope := strings.TrimSpace(os.Getenv("PORKCTL_JSON_ENVELOPE")) == "1"
+	if envelope {
+		return writeJSON(map[string]any{"ok": true, "data": v})
+	}
+	return writeJSON(v)
+}
+
+func printJSONError(err error) {
+	_ = writeJSON(map[string]any{
+		"ok": false,
+		"error": map[string]any{
+			"code":    "FATAL",
+			"message": err.Error(),
+		},
+	})
+}
+
+// --- Usage ---
+
 func printUsage() {
 	fmt.Println("Porkbun Domain Tool")
 	fmt.Println("")
@@ -139,25 +123,46 @@ func printUsage() {
 	fmt.Println("  check-bulk <d1> <d2> ...      Check multiple domains")
 	fmt.Println("  register <domain>             Register a domain")
 	fmt.Println("  pricing                       Show TLD pricing (cheapest 50)")
+	fmt.Println("  auth setup                    Show credential setup instructions")
+	fmt.Println("  auth login                    Save API credentials")
+	fmt.Println("  auth status                   Check stored credentials")
+	fmt.Println("  auth logout                   Remove stored credentials")
 	fmt.Println()
 	fmt.Println("Global flags:")
 	fmt.Println("  --json                        Output JSON envelope")
 }
 
-func runPing(ctx Ctx) error {
+// --- Subcommands ---
+
+func runVersion(args []string) error {
+	fs := flag.NewFlagSet("porkctl version", flag.ContinueOnError)
+	jsonFlag := fs.Bool("json", false, "JSON output")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *jsonFlag {
+		return printJSON(map[string]any{"version": version})
+	}
+	fmt.Println(version)
+	return nil
+}
+
+func runPing(args []string) error {
+	fs := flag.NewFlagSet("porkctl ping", flag.ContinueOnError)
+	jsonFlag := fs.Bool("json", false, "JSON output")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 	data, err := apiPost("/ping", nil)
 	if err != nil {
 		return err
 	}
 	status := asString(data["status"])
-	if ctx.JSON {
-		return emitJSON(map[string]any{
-			"ok": true,
-			"data": map[string]any{
-				"status":  strings.EqualFold(status, "SUCCESS"),
-				"ip":      fallback(asString(data["yourIp"]), "unknown"),
-				"message": fallback(asString(data["message"]), "Unknown error"),
-			},
+	if *jsonFlag {
+		return printJSON(map[string]any{
+			"status":  strings.EqualFold(status, "SUCCESS"),
+			"ip":      fallback(asString(data["yourIp"]), "unknown"),
+			"message": fallback(asString(data["message"]), "Unknown error"),
 		})
 	}
 	if strings.EqualFold(status, "SUCCESS") {
@@ -170,14 +175,24 @@ func runPing(ctx Ctx) error {
 	return nil
 }
 
-func runCheck(domain string, ctx Ctx) error {
+func runCheck(args []string) error {
+	fs := flag.NewFlagSet("porkctl check", flag.ContinueOnError)
+	jsonFlag := fs.Bool("json", false, "JSON output")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		return errors.New("Usage: porkctl check <domain>")
+	}
+	domain := fs.Arg(0)
+
 	data, err := apiPost("/domain/checkDomain/"+domain, nil)
 	if err != nil {
 		return err
 	}
 	avail, price, renewal := parseCheckResponse(data)
 	msg := asString(data["message"])
-	if ctx.JSON {
+	if *jsonFlag {
 		out := map[string]any{
 			"domain":         domain,
 			"available":      avail,
@@ -187,7 +202,7 @@ func runCheck(domain string, ctx Ctx) error {
 		if msg != "" {
 			out["message"] = msg
 		}
-		return emitJSON(map[string]any{"ok": true, "data": out})
+		return printJSON(out)
 	}
 	fmt.Printf("DOMAIN: %s\n", domain)
 	if avail {
@@ -207,8 +222,18 @@ func runCheck(domain string, ctx Ctx) error {
 	return nil
 }
 
-func runCheckBulk(domains []string, ctx Ctx) error {
-	if !ctx.JSON {
+func runCheckBulk(args []string) error {
+	fs := flag.NewFlagSet("porkctl check-bulk", flag.ContinueOnError)
+	jsonFlag := fs.Bool("json", false, "JSON output")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	domains := fs.Args()
+	if len(domains) == 0 {
+		return errors.New("Usage: porkctl check-bulk <domain1> <domain2> ...")
+	}
+
+	if !*jsonFlag {
 		fmt.Printf("CHECKING: %d domains\n\n", len(domains))
 	}
 	results := make([]bulkResult, 0, len(domains))
@@ -240,14 +265,11 @@ func runCheckBulk(domains []string, ctx Ctx) error {
 		}
 	}
 
-	if ctx.JSON {
-		return emitJSON(map[string]any{
-			"ok": true,
-			"data": map[string]any{
-				"count":           len(results),
-				"available_count": availCount,
-				"results":         results,
-			},
+	if *jsonFlag {
+		return printJSON(map[string]any{
+			"count":           len(results),
+			"available_count": availCount,
+			"results":         results,
 		})
 	}
 
@@ -272,14 +294,24 @@ func runCheckBulk(domains []string, ctx Ctx) error {
 	return nil
 }
 
-func runRegister(domain string, ctx Ctx) error {
+func runRegister(args []string) error {
+	fs := flag.NewFlagSet("porkctl register", flag.ContinueOnError)
+	jsonFlag := fs.Bool("json", false, "JSON output")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		return errors.New("Usage: porkctl register <domain>")
+	}
+	domain := fs.Arg(0)
+
 	checkData, err := apiPost("/domain/checkDomain/"+domain, nil)
 	if err != nil {
 		return err
 	}
 	avail, price, renewal := parseCheckResponse(checkData)
 	if !avail {
-		if !ctx.JSON {
+		if !*jsonFlag {
 			fmt.Printf("DOMAIN: %s\n", domain)
 			fmt.Println("AVAILABLE: no")
 			fmt.Println("Cannot register - domain is not available.")
@@ -318,17 +350,14 @@ func runRegister(domain string, ctx Ctx) error {
 	}
 
 	if strings.EqualFold(asString(regData["status"]), "SUCCESS") {
-		if ctx.JSON {
-			return emitJSON(map[string]any{
-				"ok": true,
-				"data": map[string]any{
-					"domain":         domain,
-					"available":      true,
-					"registered":     true,
-					"register_price": price,
-					"renewal_price":  renewal,
-					"message":        fallback(asString(regData["message"]), "Domain registered successfully"),
-				},
+		if *jsonFlag {
+			return printJSON(map[string]any{
+				"domain":         domain,
+				"available":      true,
+				"registered":     true,
+				"register_price": price,
+				"renewal_price":  renewal,
+				"message":        fallback(asString(regData["message"]), "Domain registered successfully"),
 			})
 		}
 		fmt.Println("REGISTERED: yes")
@@ -341,7 +370,13 @@ func runRegister(domain string, ctx Ctx) error {
 	return errors.New(fallback(asString(regData["message"]), "registration failed"))
 }
 
-func runPricing(ctx Ctx) error {
+func runPricing(args []string) error {
+	fs := flag.NewFlagSet("porkctl pricing", flag.ContinueOnError)
+	jsonFlag := fs.Bool("json", false, "JSON output")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
 	data, err := apiGet("/pricing/get")
 	if err != nil {
 		return err
@@ -356,10 +391,10 @@ func runPricing(ctx Ctx) error {
 	}
 
 	type row struct {
-		TLD      string
-		Register string
-		Renewal  string
-		RegNum   float64
+		TLD      string  `json:"tld"`
+		Register string  `json:"register"`
+		Renewal  string  `json:"renewal"`
+		RegNum   float64 `json:"-"`
 	}
 	rows := make([]row, 0, len(pricing))
 	for tld, v := range pricing {
@@ -377,13 +412,10 @@ func runPricing(ctx Ctx) error {
 	if len(rows) > 50 {
 		rows = rows[:50]
 	}
-	if ctx.JSON {
-		return emitJSON(map[string]any{
-			"ok": true,
-			"data": map[string]any{
-				"count": len(rows),
-				"rows":  rows,
-			},
+	if *jsonFlag {
+		return printJSON(map[string]any{
+			"count": len(rows),
+			"rows":  rows,
 		})
 	}
 
@@ -402,6 +434,304 @@ func runPricing(ctx Ctx) error {
 	fmt.Printf("\n... showing %d cheapest TLDs\n", len(rows))
 	return nil
 }
+
+// --- Auth subcommands ---
+
+func runAuth(args []string) error {
+	if len(args) == 0 || args[0] == "help" {
+		fmt.Println("Auth commands:")
+		fmt.Println("  auth setup    Show credential setup instructions")
+		fmt.Println("  auth login    Save API credentials")
+		fmt.Println("  auth status   Check stored credentials")
+		fmt.Println("  auth logout   Remove stored credentials")
+		return nil
+	}
+
+	sub := args[0]
+	rest := args[1:]
+
+	switch sub {
+	case "setup":
+		return runAuthSetup(rest)
+	case "login":
+		return runAuthLogin(rest)
+	case "status":
+		return runAuthStatus(rest)
+	case "logout":
+		return runAuthLogout(rest)
+	default:
+		return fmt.Errorf("unknown auth command %q", sub)
+	}
+}
+
+func runAuthSetup(args []string) error {
+	fs := flag.NewFlagSet("porkctl auth setup", flag.ContinueOnError)
+	jsonFlag := fs.Bool("json", false, "JSON output")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	configDir, err := configPath()
+	if err != nil {
+		return err
+	}
+
+	steps := []map[string]string{
+		{"step": "1", "action": "Create an API key at https://porkbun.com/account/api"},
+		{"step": "2", "action": "Enable API access for each domain at https://porkbun.com/account/domainsSpe498"},
+		{"step": "3", "action": fmt.Sprintf("Run: porkctl auth login")},
+		{"step": "4", "action": "Verify with: porkctl auth status"},
+	}
+
+	if *jsonFlag {
+		return printJSON(map[string]any{
+			"config_dir": configDir,
+			"steps":      steps,
+		})
+	}
+
+	fmt.Println("Porkbun API Credential Setup")
+	fmt.Println()
+	for _, s := range steps {
+		fmt.Printf("  %s. %s\n", s["step"], s["action"])
+	}
+	fmt.Printf("\nCredentials will be stored in: %s\n", filepath.Join(configDir, "config.json"))
+	return nil
+}
+
+func runAuthLogin(args []string) error {
+	fs := flag.NewFlagSet("porkctl auth login", flag.ContinueOnError)
+	jsonFlag := fs.Bool("json", false, "JSON output")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	reader := bufio.NewReader(os.Stdin)
+
+	fmt.Print("API Key: ")
+	apiKey, err := reader.ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("reading api key: %w", err)
+	}
+	apiKey = strings.TrimSpace(apiKey)
+
+	fmt.Print("Secret Key: ")
+	secretKey, err := reader.ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("reading secret key: %w", err)
+	}
+	secretKey = strings.TrimSpace(secretKey)
+
+	if apiKey == "" || secretKey == "" {
+		return errors.New("both API key and secret key are required")
+	}
+
+	configDir, err := configPath()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		return fmt.Errorf("creating config dir: %w", err)
+	}
+
+	cfg := map[string]string{
+		"api_key":    apiKey,
+		"secret_key": secretKey,
+	}
+	b, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	cfgFile := filepath.Join(configDir, "config.json")
+	if err := os.WriteFile(cfgFile, b, 0o600); err != nil {
+		return fmt.Errorf("writing config: %w", err)
+	}
+
+	if *jsonFlag {
+		return printJSON(map[string]any{
+			"saved":       true,
+			"config_file": cfgFile,
+		})
+	}
+	fmt.Printf("Credentials saved to %s\n", cfgFile)
+	return nil
+}
+
+func runAuthStatus(args []string) error {
+	fs := flag.NewFlagSet("porkctl auth status", flag.ContinueOnError)
+	jsonFlag := fs.Bool("json", false, "JSON output")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	keys, source, err := resolveKeys()
+	if err != nil {
+		if *jsonFlag {
+			return printJSON(map[string]any{
+				"authenticated": false,
+				"message":       err.Error(),
+			})
+		}
+		fmt.Println("STATUS: not configured")
+		fmt.Printf("MESSAGE: %s\n", err)
+		return nil
+	}
+
+	// Mask keys for display
+	maskedAPI := maskKey(keys.APIKey)
+	maskedSecret := maskKey(keys.SecretKey)
+
+	if *jsonFlag {
+		return printJSON(map[string]any{
+			"authenticated": true,
+			"source":        source,
+			"api_key":       maskedAPI,
+			"secret_key":    maskedSecret,
+		})
+	}
+	fmt.Println("STATUS: configured")
+	fmt.Printf("SOURCE: %s\n", source)
+	fmt.Printf("API_KEY: %s\n", maskedAPI)
+	fmt.Printf("SECRET_KEY: %s\n", maskedSecret)
+	return nil
+}
+
+func runAuthLogout(args []string) error {
+	fs := flag.NewFlagSet("porkctl auth logout", flag.ContinueOnError)
+	jsonFlag := fs.Bool("json", false, "JSON output")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	configDir, err := configPath()
+	if err != nil {
+		return err
+	}
+	cfgFile := filepath.Join(configDir, "config.json")
+
+	if _, err := os.Stat(cfgFile); errors.Is(err, os.ErrNotExist) {
+		if *jsonFlag {
+			return printJSON(map[string]any{"removed": false, "message": "no config file found"})
+		}
+		fmt.Println("No config file found.")
+		return nil
+	}
+
+	if err := os.Remove(cfgFile); err != nil {
+		return fmt.Errorf("removing config: %w", err)
+	}
+
+	if *jsonFlag {
+		return printJSON(map[string]any{"removed": true, "config_file": cfgFile})
+	}
+	fmt.Printf("Credentials removed from %s\n", cfgFile)
+	return nil
+}
+
+func maskKey(key string) string {
+	if len(key) <= 8 {
+		return strings.Repeat("*", len(key))
+	}
+	return key[:4] + "..." + key[len(key)-4:]
+}
+
+// --- Config / Keys ---
+
+func configPath() (string, error) {
+	base, err := os.UserConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("config dir: %w", err)
+	}
+	return filepath.Join(base, "porkctl"), nil
+}
+
+func loadKeys() (apiKeys, error) {
+	keys, _, err := resolveKeys()
+	return keys, err
+}
+
+func resolveKeys() (apiKeys, string, error) {
+	// 1. Environment variables (highest priority)
+	if apiKey, secretKey := resolveKeysFromEnv(); apiKey != "" && secretKey != "" {
+		return apiKeys{APIKey: apiKey, SecretKey: secretKey}, "environment", nil
+	}
+
+	// 2. Explicit env file path
+	if p := strings.TrimSpace(os.Getenv("PORKCTL_ENV_FILE")); p != "" {
+		keys, err := loadKeysFromFile(p)
+		if err == nil {
+			return keys, "env_file:" + p, nil
+		}
+	}
+
+	// 3. Config file in os.UserConfigDir()
+	configDir, err := configPath()
+	if err == nil {
+		cfgFile := filepath.Join(configDir, "config.json")
+		if keys, err := loadKeysFromConfig(cfgFile); err == nil {
+			return keys, "config:" + cfgFile, nil
+		}
+	}
+
+	// 4. Local env files
+	localCandidates := []string{
+		filepath.Join(".", "porkbun.env"),
+		filepath.Join(".", ".env"),
+	}
+	for _, c := range localCandidates {
+		if keys, err := loadKeysFromFile(c); err == nil {
+			return keys, "file:" + c, nil
+		}
+	}
+
+	return apiKeys{}, "", errors.New("no credentials found; run 'porkctl auth setup' for instructions")
+}
+
+func loadKeysFromConfig(path string) (apiKeys, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return apiKeys{}, err
+	}
+	var cfg map[string]string
+	if err := json.Unmarshal(b, &cfg); err != nil {
+		return apiKeys{}, err
+	}
+	apiKey := cfg["api_key"]
+	secretKey := cfg["secret_key"]
+	if apiKey == "" || secretKey == "" {
+		return apiKeys{}, errors.New("missing api_key or secret_key in config")
+	}
+	return apiKeys{APIKey: apiKey, SecretKey: secretKey}, nil
+}
+
+func loadKeysFromFile(path string) (apiKeys, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return apiKeys{}, err
+	}
+	vals := parseEnv(string(b))
+	apiKey := vals["PORKBUN_API_KEY"]
+	secretKey := vals["PORKBUN_SECRET_KEY"]
+	if apiKey == "" || secretKey == "" {
+		return apiKeys{}, fmt.Errorf("missing PORKBUN_API_KEY or PORKBUN_SECRET_KEY in %s", path)
+	}
+	return apiKeys{APIKey: apiKey, SecretKey: secretKey}, nil
+}
+
+func resolveKeysFromEnv() (string, string) {
+	apiKey := firstNonEmpty(
+		os.Getenv("PORKBUN_API_KEY"),
+		os.Getenv("PORKCTL_API_KEY"),
+	)
+	secretKey := firstNonEmpty(
+		os.Getenv("PORKBUN_SECRET_KEY"),
+		os.Getenv("PORKCTL_SECRET_KEY"),
+	)
+	return strings.TrimSpace(apiKey), strings.TrimSpace(secretKey)
+}
+
+// --- API helpers ---
 
 func apiPost(endpoint string, body map[string]any) (map[string]any, error) {
 	keys, err := loadKeys()
@@ -520,59 +850,7 @@ func parseCheckResponse(data map[string]any) (bool, string, string) {
 	return avail, price, renewal
 }
 
-func loadKeys() (apiKeys, error) {
-	if apiKey, secretKey := resolveKeysFromEnv(); apiKey != "" && secretKey != "" {
-		return apiKeys{APIKey: apiKey, SecretKey: secretKey}, nil
-	}
-
-	candidates := []string{}
-	if p := strings.TrimSpace(os.Getenv("PORKCTL_ENV_FILE")); p != "" {
-		candidates = append(candidates, p)
-	}
-	candidates = append(candidates,
-		filepath.Join("C:", "dev", "_env", "secrets", "porkbun.env"),
-		filepath.Join(".", "porkbun.env"),
-		filepath.Join(".", ".env"),
-		filepath.Join("C:", "dev", "_skills", "porkbun", ".env"),
-	)
-
-	var content []byte
-	var chosen string
-	for _, c := range candidates {
-		if _, err := os.Stat(c); err == nil {
-			b, err := os.ReadFile(c)
-			if err == nil {
-				content = b
-				chosen = c
-				break
-			}
-		}
-	}
-	if len(content) == 0 {
-		return apiKeys{}, errors.New("no env file found; set PORKCTL_ENV_FILE or create C:/dev/_env/secrets/porkbun.env")
-	}
-
-	vals := parseEnv(string(content))
-	apiKey := vals["PORKBUN_API_KEY"]
-	secretKey := vals["PORKBUN_SECRET_KEY"]
-	if apiKey == "" || secretKey == "" {
-		return apiKeys{}, fmt.Errorf("missing PORKBUN_API_KEY or PORKBUN_SECRET_KEY in %s", chosen)
-	}
-
-	return apiKeys{APIKey: apiKey, SecretKey: secretKey}, nil
-}
-
-func resolveKeysFromEnv() (string, string) {
-	apiKey := firstNonEmpty(
-		os.Getenv("PORKBUN_API_KEY"),
-		os.Getenv("PORKCTL_API_KEY"),
-	)
-	secretKey := firstNonEmpty(
-		os.Getenv("PORKBUN_SECRET_KEY"),
-		os.Getenv("PORKCTL_SECRET_KEY"),
-	)
-	return strings.TrimSpace(apiKey), strings.TrimSpace(secretKey)
-}
+// --- Env parsing ---
 
 func parseEnv(content string) map[string]string {
 	out := map[string]string{}
@@ -591,6 +869,8 @@ func parseEnv(content string) map[string]string {
 	}
 	return out
 }
+
+// --- Type helpers ---
 
 func asMap(v any) (map[string]any, bool) {
 	m, ok := v.(map[string]any)

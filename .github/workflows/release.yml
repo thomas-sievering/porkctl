@@ -2,6 +2,7 @@ name: release
 
 on:
   push:
+    branches: ["main"]
     tags:
       - "v*"
 
@@ -44,12 +45,26 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: set-version
+        id: version
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "version=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            SHA="${{ github.sha }}"
+            echo "version=dev-${SHA::8}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "tag=dev-${SHA::8}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: build
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 0
-          VERSION: ${{ github.ref_name }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           mkdir -p dist
           BIN_NAME="porkctl-${GOOS}-${GOARCH}${{ matrix.ext }}"
@@ -88,10 +103,23 @@ jobs:
           path: release-artifacts
           merge-multiple: true
 
+      - name: set-version
+        id: version
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            SHA="${{ github.sha }}"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "tag=dev-${SHA::8}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: publish-release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.version.outputs.tag }}
           files: release-artifacts/*
           draft: false
-          prerelease: false
+          prerelease: ${{ steps.version.outputs.prerelease == 'true' }}
           fail_on_unmatched_files: true
