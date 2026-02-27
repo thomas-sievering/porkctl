@@ -5,7 +5,7 @@
 [![Release](https://img.shields.io/github/v/release/thomas-sievering/porkctl?display_name=tag)](https://github.com/thomas-sievering/porkctl/releases)
 [![Platforms](https://img.shields.io/badge/platforms-windows%20%7C%20linux%20%7C%20macOS-6f42c1)](#install)
 
-Go CLI for Porkbun domain operations.
+Go CLI for Porkbun domain and DNS operations.
 
 ## Quick Start
 
@@ -24,6 +24,15 @@ porkctl register nex.us
 
 # View cheapest TLD pricing
 porkctl pricing
+
+# List DNS records
+porkctl dns list example.com
+
+# Create a DNS record
+porkctl dns create --type A --name www --content 1.2.3.4 example.com
+
+# Delete a DNS record by ID
+porkctl dns delete --id 12345 example.com
 ```
 
 ## Install
@@ -53,6 +62,11 @@ porkctl auth setup [--json]
 porkctl auth login [--json]
 porkctl auth status [--json]
 porkctl auth logout [--json]
+porkctl dns list [--type TYPE] [--name SUB] [--filter TEXT] [--first] [--id-only] [--json] <domain>
+porkctl dns get --id N [--id-only] [--json] <domain>
+porkctl dns create --type TYPE --content VAL [--name SUB] [--ttl N] [--prio N] [--notes TXT] [--id-only] [--json] <domain>
+porkctl dns edit {--id N | --type TYPE [--name SUB]} --content VAL [--ttl N] [--prio N] [--notes TXT] [--json] <domain>
+porkctl dns delete {--id N | --type TYPE [--name SUB]} [--json] <domain>
 ```
 
 Global flags:

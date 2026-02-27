@@ -1,24 +1,24 @@
 ---
 name: porkctl
-version: "1.1"
-description: Use when user says "check domain", "register domain", "domain pricing", "is this domain available", or asks for Porkbun domain operations.
+version: "1.2"
+description: Use when user says "check domain", "register domain", "domain pricing", "is this domain available", "manage DNS", "add DNS record", "update DNS", "list DNS records", "delete DNS record", or asks for Porkbun domain/DNS operations.
 user-invocable: true
-argument-hint: "[check|register|ping|pricing] [domain or keyword]"
+argument-hint: "[check|register|ping|pricing|dns] [domain or keyword]"
 allowed-tools: Read, Bash
 ---
 
 # porkctl Skill
 
-Agent workflow for using `porkctl.exe` for Porkbun domain operations.
+Agent workflow for using `porkctl.exe` for Porkbun domain and DNS operations.
 
 ## Arguments
 
 Parse `$ARGUMENTS` into:
-- `mode`: `check`, `register`, `ping`, or `pricing`
+- `mode`: `check`, `register`, `ping`, `pricing`, or `dns`
 - `target`: domain or keyword (when relevant)
 - `extra`: remaining flags/tokens
 
-If mode is missing, default to `check`.
+If mode is missing, default to `check`. For DNS operations, also parse a submode: `list`, `get`, `create`, `edit`, `delete`.
 
 ## Examples
 
@@ -32,6 +32,12 @@ If mode is missing, default to `check`.
   - Run: `porkctl.exe ping --json`
 - User says: "show cheapest TLDs"
   - Run: `porkctl.exe pricing --json`
+- User says: "list DNS records for example.com"
+  - Run: `porkctl.exe dns list --json example.com`
+- User says: "add an A record for www pointing to 1.2.3.4"
+  - Run: `porkctl.exe dns create --type A --name www --content 1.2.3.4 --json example.com`
+- User says: "delete DNS record 12345 from example.com"
+  - Run: `porkctl.exe dns delete --id 12345 --json example.com`
 
 ## Runtime Context (Optional)
 
@@ -76,7 +82,47 @@ porkctl.exe register <domain> --json
 porkctl.exe pricing --json
 ```
 
-### 5) Return a concise result summary
+### 5) DNS management
+
+List all records:
+
+```powershell
+porkctl.exe dns list --json example.com
+```
+
+Filter by type:
+
+```powershell
+porkctl.exe dns list --type A --json example.com
+```
+
+Get a single record:
+
+```powershell
+porkctl.exe dns get --id 12345 --json example.com
+```
+
+Create a record:
+
+```powershell
+porkctl.exe dns create --type A --name www --content 1.2.3.4 --json example.com
+```
+
+Edit a record (by ID or by name+type):
+
+```powershell
+porkctl.exe dns edit --id 12345 --type A --content 5.6.7.8 --json example.com
+porkctl.exe dns edit --type A --name www --content 5.6.7.8 --json example.com
+```
+
+Delete a record (confirm with user before executing):
+
+```powershell
+porkctl.exe dns delete --id 12345 --json example.com
+porkctl.exe dns delete --type A --name www --json example.com
+```
+
+### 6) Return a concise result summary
 
 After running commands, report:
 - command executed

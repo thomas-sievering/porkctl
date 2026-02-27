@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-const apiBase = "https://api.porkbun.com/api/json/v3"
+var apiBase = "https://api.porkbun.com/api/json/v3"
 
 var version = "dev"
 
@@ -68,6 +68,8 @@ func run(argv []string) error {
 		return runPricing(args)
 	case "auth":
 		return runAuth(args)
+	case "dns":
+		return runDNS(args)
 	default:
 		return fmt.Errorf("unknown command %q", cmd)
 	}
@@ -127,6 +129,11 @@ func printUsage() {
 	fmt.Println("  auth login                    Save API credentials")
 	fmt.Println("  auth status                   Check stored credentials")
 	fmt.Println("  auth logout                   Remove stored credentials")
+	fmt.Println("  dns list <domain>             List DNS records")
+	fmt.Println("  dns get <domain> --id N       Get a single DNS record")
+	fmt.Println("  dns create <domain>           Create a DNS record")
+	fmt.Println("  dns edit <domain>             Edit a DNS record")
+	fmt.Println("  dns delete <domain>           Delete a DNS record")
 	fmt.Println()
 	fmt.Println("Global flags:")
 	fmt.Println("  --json                        Output JSON envelope")
@@ -928,4 +935,470 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// --- DNS types and helpers ---
+
+type dnsRecord struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	Content string `json:"content"`
+	TTL     string `json:"ttl"`
+	Prio    string `json:"prio"`
+	Notes   string `json:"notes,omitempty"`
+}
+
+func parseDNSRecords(data map[string]any) ([]dnsRecord, error) {
+	raw, ok := data["records"]
+	if !ok {
+		return nil, errors.New("missing records field in response")
+	}
+	arr, ok := raw.([]any)
+	if !ok {
+		return nil, errors.New("records field is not an array")
+	}
+	records := make([]dnsRecord, 0, len(arr))
+	for _, item := range arr {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		records = append(records, dnsRecord{
+			ID:      asString(m["id"]),
+			Name:    asString(m["name"]),
+			Type:    asString(m["type"]),
+			Content: asString(m["content"]),
+			TTL:     asString(m["ttl"]),
+			Prio:    asString(m["prio"]),
+			Notes:   asString(m["notes"]),
+		})
+	}
+	return records, nil
+}
+
+// --- Fuzzy matching ---
+
+func fuzzyMatch(text, pattern string) int {
+	t := strings.ToLower(text)
+	p := strings.ToLower(pattern)
+	if t == p {
+		return 0 // exact
+	}
+	if strings.HasPrefix(t, p) {
+		return 1 // prefix
+	}
+	if strings.Contains(t, p) {
+		return 2 // substring
+	}
+	if matchesWordBoundary(t, p) {
+		return 3 // word-boundary
+	}
+	return -1 // no match
+}
+
+func matchesWordBoundary(text, pattern string) bool {
+	words := strings.FieldsFunc(text, func(r rune) bool {
+		return r == ' ' || r == '.' || r == '-' || r == '_' || r == '/' || r == ':'
+	})
+	for _, w := range words {
+		if strings.HasPrefix(w, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+// --- DNS subcommands ---
+
+func runDNS(args []string) error {
+	if len(args) == 0 || args[0] == "help" {
+		fmt.Println("DNS commands:")
+		fmt.Println("  dns list   <domain>  List DNS records")
+		fmt.Println("  dns get    <domain>  Get a single DNS record by ID")
+		fmt.Println("  dns create <domain>  Create a DNS record")
+		fmt.Println("  dns edit   <domain>  Edit a DNS record")
+		fmt.Println("  dns delete <domain>  Delete a DNS record")
+		return nil
+	}
+
+	sub := args[0]
+	rest := args[1:]
+
+	switch sub {
+	case "list":
+		return runDNSList(rest)
+	case "get":
+		return runDNSGet(rest)
+	case "create":
+		return runDNSCreate(rest)
+	case "edit":
+		return runDNSEdit(rest)
+	case "delete":
+		return runDNSDelete(rest)
+	default:
+		return fmt.Errorf("unknown dns command %q", sub)
+	}
+}
+
+func runDNSList(args []string) error {
+	fs := flag.NewFlagSet("porkctl dns list", flag.ContinueOnError)
+	jsonFlag := fs.Bool("json", false, "JSON output")
+	idOnly := fs.Bool("id-only", false, "Print record IDs only, one per line")
+	fs.BoolVar(idOnly, "q", false, "Alias for --id-only")
+	first := fs.Bool("first", false, "Return only the first/best result")
+	fs.BoolVar(first, "1", false, "Alias for --first")
+	recType := fs.String("type", "", "Filter by record type (A, AAAA, CNAME, MX, TXT, ...)")
+	name := fs.String("name", "", "Subdomain name (requires --type)")
+	filter := fs.String("filter", "", "Fuzzy filter on type+name+content")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		return errors.New("Usage: porkctl dns list <domain> [--type TYPE] [--name SUB] [--filter TEXT] [--first] [--id-only] [--json]")
+	}
+	domain := fs.Arg(0)
+
+	if *name != "" && *recType == "" {
+		return errors.New("--name requires --type")
+	}
+
+	var endpoint string
+	if *recType != "" {
+		t := strings.ToUpper(*recType)
+		if *name != "" {
+			endpoint = fmt.Sprintf("/dns/retrieveByNameType/%s/%s/%s", domain, t, *name)
+		} else {
+			endpoint = fmt.Sprintf("/dns/retrieveByNameType/%s/%s", domain, t)
+		}
+	} else {
+		endpoint = fmt.Sprintf("/dns/retrieve/%s", domain)
+	}
+
+	data, err := apiPost(endpoint, nil)
+	if err != nil {
+		return err
+	}
+	records, err := parseDNSRecords(data)
+	if err != nil {
+		return err
+	}
+
+	// Apply fuzzy filter
+	type ranked struct {
+		record dnsRecord
+		rank   int
+	}
+	var filtered []ranked
+	if *filter != "" {
+		for _, r := range records {
+			composite := r.Type + " " + r.Name + " " + r.Content
+			rank := fuzzyMatch(composite, *filter)
+			if rank >= 0 {
+				filtered = append(filtered, ranked{r, rank})
+			}
+		}
+		sort.SliceStable(filtered, func(i, j int) bool {
+			return filtered[i].rank < filtered[j].rank
+		})
+	} else {
+		for _, r := range records {
+			filtered = append(filtered, ranked{r, -1})
+		}
+	}
+
+	if len(filtered) == 0 {
+		return errors.New("no matching DNS records found")
+	}
+
+	if *first {
+		filtered = filtered[:1]
+	}
+
+	if *idOnly {
+		for _, f := range filtered {
+			fmt.Println(f.record.ID)
+		}
+		return nil
+	}
+
+	if *jsonFlag {
+		out := make([]map[string]any, len(filtered))
+		for i, f := range filtered {
+			m := map[string]any{
+				"id":      f.record.ID,
+				"name":    f.record.Name,
+				"type":    f.record.Type,
+				"content": f.record.Content,
+				"ttl":     f.record.TTL,
+				"prio":    f.record.Prio,
+			}
+			if f.record.Notes != "" {
+				m["notes"] = f.record.Notes
+			}
+			if *filter != "" {
+				m["_match_rank"] = f.rank
+			}
+			out[i] = m
+		}
+		if *first {
+			return printJSON(out[0])
+		}
+		return printJSON(out)
+	}
+
+	// Table output
+	fmt.Printf("%-8s %-6s %-30s %-40s %-6s %s\n", "ID", "TYPE", "NAME", "CONTENT", "TTL", "PRIO")
+	fmt.Println(strings.Repeat("-", 96))
+	for _, f := range filtered {
+		r := f.record
+		fmt.Printf("%-8s %-6s %-30s %-40s %-6s %s\n", r.ID, r.Type, r.Name, truncate(r.Content, 40), r.TTL, r.Prio)
+	}
+	return nil
+}
+
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max-3] + "..."
+}
+
+func runDNSGet(args []string) error {
+	fs := flag.NewFlagSet("porkctl dns get", flag.ContinueOnError)
+	jsonFlag := fs.Bool("json", false, "JSON output")
+	idOnly := fs.Bool("id-only", false, "Print record ID only")
+	fs.BoolVar(idOnly, "q", false, "Alias for --id-only")
+	id := fs.String("id", "", "Record ID (required)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 || *id == "" {
+		return errors.New("Usage: porkctl dns get <domain> --id N [--id-only] [--json]")
+	}
+	domain := fs.Arg(0)
+
+	endpoint := fmt.Sprintf("/dns/retrieve/%s/%s", domain, *id)
+	data, err := apiPost(endpoint, nil)
+	if err != nil {
+		return err
+	}
+	records, err := parseDNSRecords(data)
+	if err != nil {
+		return err
+	}
+	if len(records) == 0 {
+		return errors.New("record not found")
+	}
+	r := records[0]
+
+	if *idOnly {
+		fmt.Println(r.ID)
+		return nil
+	}
+
+	if *jsonFlag {
+		m := map[string]any{
+			"id":      r.ID,
+			"name":    r.Name,
+			"type":    r.Type,
+			"content": r.Content,
+			"ttl":     r.TTL,
+			"prio":    r.Prio,
+		}
+		if r.Notes != "" {
+			m["notes"] = r.Notes
+		}
+		return printJSON(m)
+	}
+
+	fmt.Printf("ID:      %s\n", r.ID)
+	fmt.Printf("TYPE:    %s\n", r.Type)
+	fmt.Printf("NAME:    %s\n", r.Name)
+	fmt.Printf("CONTENT: %s\n", r.Content)
+	fmt.Printf("TTL:     %s\n", r.TTL)
+	fmt.Printf("PRIO:    %s\n", r.Prio)
+	if r.Notes != "" {
+		fmt.Printf("NOTES:   %s\n", r.Notes)
+	}
+	return nil
+}
+
+func runDNSCreate(args []string) error {
+	fs := flag.NewFlagSet("porkctl dns create", flag.ContinueOnError)
+	jsonFlag := fs.Bool("json", false, "JSON output")
+	idOnly := fs.Bool("id-only", false, "Print new record ID only")
+	fs.BoolVar(idOnly, "q", false, "Alias for --id-only")
+	recType := fs.String("type", "", "Record type (required: A, AAAA, CNAME, MX, TXT, ...)")
+	content := fs.String("content", "", "Record content (required)")
+	name := fs.String("name", "", "Subdomain (omit for root)")
+	ttl := fs.String("ttl", "", "TTL in seconds")
+	prio := fs.String("prio", "", "Priority (for MX, SRV)")
+	notes := fs.String("notes", "", "Notes")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 || *recType == "" || *content == "" {
+		return errors.New("Usage: porkctl dns create <domain> --type TYPE --content VAL [--name SUB] [--ttl N] [--prio N] [--notes TXT] [--id-only] [--json]")
+	}
+	domain := fs.Arg(0)
+
+	body := map[string]any{
+		"type":    strings.ToUpper(*recType),
+		"content": *content,
+	}
+	if *name != "" {
+		body["name"] = *name
+	}
+	if *ttl != "" {
+		body["ttl"] = *ttl
+	}
+	if *prio != "" {
+		body["prio"] = *prio
+	}
+	if *notes != "" {
+		body["notes"] = *notes
+	}
+
+	endpoint := fmt.Sprintf("/dns/create/%s", domain)
+	data, err := apiPost(endpoint, body)
+	if err != nil {
+		return err
+	}
+
+	newID := asString(data["id"])
+
+	if *idOnly {
+		fmt.Println(newID)
+		return nil
+	}
+
+	if *jsonFlag {
+		return printJSON(map[string]any{
+			"created": true,
+			"id":      newID,
+		})
+	}
+
+	fmt.Printf("CREATED: %s\n", newID)
+	return nil
+}
+
+func runDNSEdit(args []string) error {
+	fs := flag.NewFlagSet("porkctl dns edit", flag.ContinueOnError)
+	jsonFlag := fs.Bool("json", false, "JSON output")
+	id := fs.String("id", "", "Record ID (edit by ID)")
+	recType := fs.String("type", "", "Record type (edit by name+type)")
+	name := fs.String("name", "", "Subdomain (for by-name-type mode)")
+	content := fs.String("content", "", "Record content (required)")
+	ttl := fs.String("ttl", "", "TTL in seconds")
+	prio := fs.String("prio", "", "Priority")
+	notes := fs.String("notes", "", "Notes")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 || *content == "" {
+		return errors.New("Usage: porkctl dns edit <domain> {--id N | --type TYPE [--name SUB]} --content VAL [--ttl N] [--prio N] [--notes TXT] [--json]")
+	}
+	if *id == "" && *recType == "" {
+		return errors.New("either --id or --type is required")
+	}
+	domain := fs.Arg(0)
+
+	body := map[string]any{
+		"content": *content,
+	}
+	if *recType != "" {
+		body["type"] = strings.ToUpper(*recType)
+	}
+	if *ttl != "" {
+		body["ttl"] = *ttl
+	}
+	if *prio != "" {
+		body["prio"] = *prio
+	}
+	if *notes != "" {
+		body["notes"] = *notes
+	}
+
+	var endpoint string
+	var label string
+	if *id != "" {
+		body["type"] = strings.ToUpper(*recType)
+		endpoint = fmt.Sprintf("/dns/edit/%s/%s", domain, *id)
+		label = *id
+	} else {
+		t := strings.ToUpper(*recType)
+		if *name != "" {
+			endpoint = fmt.Sprintf("/dns/editByNameType/%s/%s/%s", domain, t, *name)
+			label = t + " " + *name
+		} else {
+			endpoint = fmt.Sprintf("/dns/editByNameType/%s/%s", domain, t)
+			label = t
+		}
+	}
+
+	_, err := apiPost(endpoint, body)
+	if err != nil {
+		return err
+	}
+
+	if *jsonFlag {
+		return printJSON(map[string]any{
+			"edited": true,
+			"label":  label,
+		})
+	}
+
+	fmt.Printf("EDITED: %s\n", label)
+	return nil
+}
+
+func runDNSDelete(args []string) error {
+	fs := flag.NewFlagSet("porkctl dns delete", flag.ContinueOnError)
+	jsonFlag := fs.Bool("json", false, "JSON output")
+	id := fs.String("id", "", "Record ID (delete by ID)")
+	recType := fs.String("type", "", "Record type (delete by name+type)")
+	name := fs.String("name", "", "Subdomain (for by-name-type mode)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		return errors.New("Usage: porkctl dns delete <domain> {--id N | --type TYPE [--name SUB]} [--json]")
+	}
+	if *id == "" && *recType == "" {
+		return errors.New("either --id or --type is required")
+	}
+	domain := fs.Arg(0)
+
+	var endpoint string
+	var label string
+	if *id != "" {
+		endpoint = fmt.Sprintf("/dns/delete/%s/%s", domain, *id)
+		label = *id
+	} else {
+		t := strings.ToUpper(*recType)
+		if *name != "" {
+			endpoint = fmt.Sprintf("/dns/deleteByNameType/%s/%s/%s", domain, t, *name)
+			label = t + " " + *name
+		} else {
+			endpoint = fmt.Sprintf("/dns/deleteByNameType/%s/%s", domain, t)
+			label = t
+		}
+	}
+
+	_, err := apiPost(endpoint, nil)
+	if err != nil {
+		return err
+	}
+
+	if *jsonFlag {
+		return printJSON(map[string]any{
+			"deleted": true,
+			"label":   label,
+		})
+	}
+
+	fmt.Printf("DELETED: %s\n", label)
+	return nil
 }
