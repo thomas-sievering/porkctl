@@ -78,7 +78,7 @@ func run(argv []string) error {
 // --- JSON helpers ---
 
 func writeJSON(v any) error {
-	pretty := strings.TrimSpace(os.Getenv("PORKCTL_JSON_PRETTY")) == "1"
+	pretty := strings.TrimSpace(os.Getenv("T_PORKBUN_JSON_PRETTY")) == "1"
 	var (
 		b   []byte
 		err error
@@ -96,7 +96,7 @@ func writeJSON(v any) error {
 }
 
 func printJSON(v any) error {
-	envelope := strings.TrimSpace(os.Getenv("PORKCTL_JSON_ENVELOPE")) == "1"
+	envelope := strings.TrimSpace(os.Getenv("T_PORKBUN_JSON_ENVELOPE")) == "1"
 	if envelope {
 		return writeJSON(map[string]any{"ok": true, "data": v})
 	}
@@ -142,7 +142,7 @@ func printUsage() {
 // --- Subcommands ---
 
 func runVersion(args []string) error {
-	fs := flag.NewFlagSet("porkctl version", flag.ContinueOnError)
+	fs := flag.NewFlagSet("t-porkbun version", flag.ContinueOnError)
 	jsonFlag := fs.Bool("json", false, "JSON output")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -155,7 +155,7 @@ func runVersion(args []string) error {
 }
 
 func runPing(args []string) error {
-	fs := flag.NewFlagSet("porkctl ping", flag.ContinueOnError)
+	fs := flag.NewFlagSet("t-porkbun ping", flag.ContinueOnError)
 	jsonFlag := fs.Bool("json", false, "JSON output")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -183,13 +183,13 @@ func runPing(args []string) error {
 }
 
 func runCheck(args []string) error {
-	fs := flag.NewFlagSet("porkctl check", flag.ContinueOnError)
+	fs := flag.NewFlagSet("t-porkbun check", flag.ContinueOnError)
 	jsonFlag := fs.Bool("json", false, "JSON output")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() != 1 {
-		return errors.New("Usage: porkctl check <domain>")
+		return errors.New("Usage: t-porkbun check <domain>")
 	}
 	domain := fs.Arg(0)
 
@@ -230,14 +230,14 @@ func runCheck(args []string) error {
 }
 
 func runCheckBulk(args []string) error {
-	fs := flag.NewFlagSet("porkctl check-bulk", flag.ContinueOnError)
+	fs := flag.NewFlagSet("t-porkbun check-bulk", flag.ContinueOnError)
 	jsonFlag := fs.Bool("json", false, "JSON output")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	domains := fs.Args()
 	if len(domains) == 0 {
-		return errors.New("Usage: porkctl check-bulk <domain1> <domain2> ...")
+		return errors.New("Usage: t-porkbun check-bulk <domain1> <domain2> ...")
 	}
 
 	if !*jsonFlag {
@@ -302,13 +302,13 @@ func runCheckBulk(args []string) error {
 }
 
 func runRegister(args []string) error {
-	fs := flag.NewFlagSet("porkctl register", flag.ContinueOnError)
+	fs := flag.NewFlagSet("t-porkbun register", flag.ContinueOnError)
 	jsonFlag := fs.Bool("json", false, "JSON output")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() != 1 {
-		return errors.New("Usage: porkctl register <domain>")
+		return errors.New("Usage: t-porkbun register <domain>")
 	}
 	domain := fs.Arg(0)
 
@@ -378,7 +378,7 @@ func runRegister(args []string) error {
 }
 
 func runPricing(args []string) error {
-	fs := flag.NewFlagSet("porkctl pricing", flag.ContinueOnError)
+	fs := flag.NewFlagSet("t-porkbun pricing", flag.ContinueOnError)
 	jsonFlag := fs.Bool("json", false, "JSON output")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -472,7 +472,7 @@ func runAuth(args []string) error {
 }
 
 func runAuthSetup(args []string) error {
-	fs := flag.NewFlagSet("porkctl auth setup", flag.ContinueOnError)
+	fs := flag.NewFlagSet("t-porkbun auth setup", flag.ContinueOnError)
 	jsonFlag := fs.Bool("json", false, "JSON output")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -486,8 +486,8 @@ func runAuthSetup(args []string) error {
 	steps := []map[string]string{
 		{"step": "1", "action": "Create an API key at https://porkbun.com/account/api"},
 		{"step": "2", "action": "Enable API access for each domain at https://porkbun.com/account/domainsSpe498"},
-		{"step": "3", "action": fmt.Sprintf("Run: porkctl auth login")},
-		{"step": "4", "action": "Verify with: porkctl auth status"},
+		{"step": "3", "action": fmt.Sprintf("Run: t-porkbun auth login")},
+		{"step": "4", "action": "Verify with: t-porkbun auth status"},
 	}
 
 	if *jsonFlag {
@@ -507,7 +507,7 @@ func runAuthSetup(args []string) error {
 }
 
 func runAuthLogin(args []string) error {
-	fs := flag.NewFlagSet("porkctl auth login", flag.ContinueOnError)
+	fs := flag.NewFlagSet("t-porkbun auth login", flag.ContinueOnError)
 	jsonFlag := fs.Bool("json", false, "JSON output")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -566,7 +566,7 @@ func runAuthLogin(args []string) error {
 }
 
 func runAuthStatus(args []string) error {
-	fs := flag.NewFlagSet("porkctl auth status", flag.ContinueOnError)
+	fs := flag.NewFlagSet("t-porkbun auth status", flag.ContinueOnError)
 	jsonFlag := fs.Bool("json", false, "JSON output")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -605,7 +605,7 @@ func runAuthStatus(args []string) error {
 }
 
 func runAuthLogout(args []string) error {
-	fs := flag.NewFlagSet("porkctl auth logout", flag.ContinueOnError)
+	fs := flag.NewFlagSet("t-porkbun auth logout", flag.ContinueOnError)
 	jsonFlag := fs.Bool("json", false, "JSON output")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -650,7 +650,7 @@ func configPath() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("config dir: %w", err)
 	}
-	return filepath.Join(base, "porkctl"), nil
+	return filepath.Join(base, "t-porkbun"), nil
 }
 
 func loadKeys() (apiKeys, error) {
@@ -665,7 +665,7 @@ func resolveKeys() (apiKeys, string, error) {
 	}
 
 	// 2. Explicit env file path
-	if p := strings.TrimSpace(os.Getenv("PORKCTL_ENV_FILE")); p != "" {
+	if p := strings.TrimSpace(os.Getenv("T_PORKBUN_ENV_FILE")); p != "" {
 		keys, err := loadKeysFromFile(p)
 		if err == nil {
 			return keys, "env_file:" + p, nil
@@ -692,7 +692,7 @@ func resolveKeys() (apiKeys, string, error) {
 		}
 	}
 
-	return apiKeys{}, "", errors.New("no credentials found; run 'porkctl auth setup' for instructions")
+	return apiKeys{}, "", errors.New("no credentials found; run 't-porkbun auth setup' for instructions")
 }
 
 func loadKeysFromConfig(path string) (apiKeys, error) {
@@ -729,11 +729,11 @@ func loadKeysFromFile(path string) (apiKeys, error) {
 func resolveKeysFromEnv() (string, string) {
 	apiKey := firstNonEmpty(
 		os.Getenv("PORKBUN_API_KEY"),
-		os.Getenv("PORKCTL_API_KEY"),
+		os.Getenv("T_PORKBUN_API_KEY"),
 	)
 	secretKey := firstNonEmpty(
 		os.Getenv("PORKBUN_SECRET_KEY"),
-		os.Getenv("PORKCTL_SECRET_KEY"),
+		os.Getenv("T_PORKBUN_SECRET_KEY"),
 	)
 	return strings.TrimSpace(apiKey), strings.TrimSpace(secretKey)
 }
@@ -1042,7 +1042,7 @@ func runDNS(args []string) error {
 }
 
 func runDNSList(args []string) error {
-	fs := flag.NewFlagSet("porkctl dns list", flag.ContinueOnError)
+	fs := flag.NewFlagSet("t-porkbun dns list", flag.ContinueOnError)
 	jsonFlag := fs.Bool("json", false, "JSON output")
 	idOnly := fs.Bool("id-only", false, "Print record IDs only, one per line")
 	fs.BoolVar(idOnly, "q", false, "Alias for --id-only")
@@ -1055,7 +1055,7 @@ func runDNSList(args []string) error {
 		return err
 	}
 	if fs.NArg() != 1 {
-		return errors.New("Usage: porkctl dns list <domain> [--type TYPE] [--name SUB] [--filter TEXT] [--first] [--id-only] [--json]")
+		return errors.New("Usage: t-porkbun dns list <domain> [--type TYPE] [--name SUB] [--filter TEXT] [--first] [--id-only] [--json]")
 	}
 	domain := fs.Arg(0)
 
@@ -1165,7 +1165,7 @@ func truncate(s string, max int) string {
 }
 
 func runDNSGet(args []string) error {
-	fs := flag.NewFlagSet("porkctl dns get", flag.ContinueOnError)
+	fs := flag.NewFlagSet("t-porkbun dns get", flag.ContinueOnError)
 	jsonFlag := fs.Bool("json", false, "JSON output")
 	idOnly := fs.Bool("id-only", false, "Print record ID only")
 	fs.BoolVar(idOnly, "q", false, "Alias for --id-only")
@@ -1174,7 +1174,7 @@ func runDNSGet(args []string) error {
 		return err
 	}
 	if fs.NArg() != 1 || *id == "" {
-		return errors.New("Usage: porkctl dns get <domain> --id N [--id-only] [--json]")
+		return errors.New("Usage: t-porkbun dns get <domain> --id N [--id-only] [--json]")
 	}
 	domain := fs.Arg(0)
 
@@ -1225,7 +1225,7 @@ func runDNSGet(args []string) error {
 }
 
 func runDNSCreate(args []string) error {
-	fs := flag.NewFlagSet("porkctl dns create", flag.ContinueOnError)
+	fs := flag.NewFlagSet("t-porkbun dns create", flag.ContinueOnError)
 	jsonFlag := fs.Bool("json", false, "JSON output")
 	idOnly := fs.Bool("id-only", false, "Print new record ID only")
 	fs.BoolVar(idOnly, "q", false, "Alias for --id-only")
@@ -1239,7 +1239,7 @@ func runDNSCreate(args []string) error {
 		return err
 	}
 	if fs.NArg() != 1 || *recType == "" || *content == "" {
-		return errors.New("Usage: porkctl dns create <domain> --type TYPE --content VAL [--name SUB] [--ttl N] [--prio N] [--notes TXT] [--id-only] [--json]")
+		return errors.New("Usage: t-porkbun dns create <domain> --type TYPE --content VAL [--name SUB] [--ttl N] [--prio N] [--notes TXT] [--id-only] [--json]")
 	}
 	domain := fs.Arg(0)
 
@@ -1285,7 +1285,7 @@ func runDNSCreate(args []string) error {
 }
 
 func runDNSEdit(args []string) error {
-	fs := flag.NewFlagSet("porkctl dns edit", flag.ContinueOnError)
+	fs := flag.NewFlagSet("t-porkbun dns edit", flag.ContinueOnError)
 	jsonFlag := fs.Bool("json", false, "JSON output")
 	id := fs.String("id", "", "Record ID (edit by ID)")
 	recType := fs.String("type", "", "Record type (edit by name+type)")
@@ -1298,7 +1298,7 @@ func runDNSEdit(args []string) error {
 		return err
 	}
 	if fs.NArg() != 1 || *content == "" {
-		return errors.New("Usage: porkctl dns edit <domain> {--id N | --type TYPE [--name SUB]} --content VAL [--ttl N] [--prio N] [--notes TXT] [--json]")
+		return errors.New("Usage: t-porkbun dns edit <domain> {--id N | --type TYPE [--name SUB]} --content VAL [--ttl N] [--prio N] [--notes TXT] [--json]")
 	}
 	if *id == "" && *recType == "" {
 		return errors.New("either --id or --type is required")
@@ -1355,7 +1355,7 @@ func runDNSEdit(args []string) error {
 }
 
 func runDNSDelete(args []string) error {
-	fs := flag.NewFlagSet("porkctl dns delete", flag.ContinueOnError)
+	fs := flag.NewFlagSet("t-porkbun dns delete", flag.ContinueOnError)
 	jsonFlag := fs.Bool("json", false, "JSON output")
 	id := fs.String("id", "", "Record ID (delete by ID)")
 	recType := fs.String("type", "", "Record type (delete by name+type)")
@@ -1364,7 +1364,7 @@ func runDNSDelete(args []string) error {
 		return err
 	}
 	if fs.NArg() != 1 {
-		return errors.New("Usage: porkctl dns delete <domain> {--id N | --type TYPE [--name SUB]} [--json]")
+		return errors.New("Usage: t-porkbun dns delete <domain> {--id N | --type TYPE [--name SUB]} [--json]")
 	}
 	if *id == "" && *recType == "" {
 		return errors.New("either --id or --type is required")

@@ -1,5 +1,5 @@
 ---
-name: porkctl
+name: t-porkbun
 version: "1.2"
 description: Use when user says "check domain", "register domain", "domain pricing", "is this domain available", "manage DNS", "add DNS record", "update DNS", "list DNS records", "delete DNS record", or asks for Porkbun domain/DNS operations.
 user-invocable: true
@@ -7,9 +7,9 @@ argument-hint: "[check|register|ping|pricing|dns] [domain or keyword]"
 allowed-tools: Read, Bash
 ---
 
-# porkctl Skill
+# t-porkbun Skill
 
-Agent workflow for using `porkctl.exe` for Porkbun domain and DNS operations.
+Agent workflow for using `t-porkbun.exe` for Porkbun domain and DNS operations.
 
 ## Arguments
 
@@ -23,21 +23,21 @@ If mode is missing, default to `check`. For DNS operations, also parse a submode
 ## Examples
 
 - User says: "check nex.us"
-  - Run: `porkctl.exe check nex.us --json`
+  - Run: `t-porkbun.exe check nex.us --json`
 - User says: "check these domains" + list
-  - Run: `porkctl.exe check-bulk <domain1> <domain2> ... --json`
+  - Run: `t-porkbun.exe check-bulk <domain1> <domain2> ... --json`
 - User says: "register nex.us"
-  - Run: `porkctl.exe register nex.us --json`
+  - Run: `t-porkbun.exe register nex.us --json`
 - User says: "is Porkbun auth working?"
-  - Run: `porkctl.exe ping --json`
+  - Run: `t-porkbun.exe ping --json`
 - User says: "show cheapest TLDs"
-  - Run: `porkctl.exe pricing --json`
+  - Run: `t-porkbun.exe pricing --json`
 - User says: "list DNS records for example.com"
-  - Run: `porkctl.exe dns list --json example.com`
+  - Run: `t-porkbun.exe dns list --json example.com`
 - User says: "add an A record for www pointing to 1.2.3.4"
-  - Run: `porkctl.exe dns create --type A --name www --content 1.2.3.4 --json example.com`
+  - Run: `t-porkbun.exe dns create --type A --name www --content 1.2.3.4 --json example.com`
 - User says: "delete DNS record 12345 from example.com"
-  - Run: `porkctl.exe dns delete --id 12345 --json example.com`
+  - Run: `t-porkbun.exe dns delete --id 12345 --json example.com`
 
 ## Runtime Context (Optional)
 
@@ -51,7 +51,7 @@ Use these quick checks when troubleshooting local setup:
 ### 1) Validate credentials (optional quick check)
 
 ```powershell
-porkctl.exe ping --json
+t-porkbun.exe ping --json
 ```
 
 ### 2) Check availability
@@ -59,13 +59,13 @@ porkctl.exe ping --json
 Single domain:
 
 ```powershell
-porkctl.exe check <domain> --json
+t-porkbun.exe check <domain> --json
 ```
 
 Bulk:
 
 ```powershell
-porkctl.exe check-bulk <d1> <d2> ... --json
+t-porkbun.exe check-bulk <d1> <d2> ... --json
 ```
 
 ### 3) Register (high-impact action)
@@ -73,13 +73,13 @@ porkctl.exe check-bulk <d1> <d2> ... --json
 Always show the domain and price from `check` output first, then confirm with user before executing:
 
 ```powershell
-porkctl.exe register <domain> --json
+t-porkbun.exe register <domain> --json
 ```
 
 ### 4) Pricing view
 
 ```powershell
-porkctl.exe pricing --json
+t-porkbun.exe pricing --json
 ```
 
 ### 5) DNS management
@@ -87,39 +87,39 @@ porkctl.exe pricing --json
 List all records:
 
 ```powershell
-porkctl.exe dns list --json example.com
+t-porkbun.exe dns list --json example.com
 ```
 
 Filter by type:
 
 ```powershell
-porkctl.exe dns list --type A --json example.com
+t-porkbun.exe dns list --type A --json example.com
 ```
 
 Get a single record:
 
 ```powershell
-porkctl.exe dns get --id 12345 --json example.com
+t-porkbun.exe dns get --id 12345 --json example.com
 ```
 
 Create a record:
 
 ```powershell
-porkctl.exe dns create --type A --name www --content 1.2.3.4 --json example.com
+t-porkbun.exe dns create --type A --name www --content 1.2.3.4 --json example.com
 ```
 
 Edit a record (by ID or by name+type):
 
 ```powershell
-porkctl.exe dns edit --id 12345 --type A --content 5.6.7.8 --json example.com
-porkctl.exe dns edit --type A --name www --content 5.6.7.8 --json example.com
+t-porkbun.exe dns edit --id 12345 --type A --content 5.6.7.8 --json example.com
+t-porkbun.exe dns edit --type A --name www --content 5.6.7.8 --json example.com
 ```
 
 Delete a record (confirm with user before executing):
 
 ```powershell
-porkctl.exe dns delete --id 12345 --json example.com
-porkctl.exe dns delete --type A --name www --json example.com
+t-porkbun.exe dns delete --id 12345 --json example.com
+t-porkbun.exe dns delete --type A --name www --json example.com
 ```
 
 ### 6) Return a concise result summary
@@ -131,9 +131,9 @@ After running commands, report:
 
 ## Credentials
 
-`porkctl.exe` resolves credentials in this order:
-1. `PORKBUN_API_KEY` + `PORKBUN_SECRET_KEY` (or `PORKCTL_API_KEY` + `PORKCTL_SECRET_KEY`)
-2. `PORKCTL_ENV_FILE`
+`t-porkbun.exe` resolves credentials in this order:
+1. `PORKBUN_API_KEY` + `PORKBUN_SECRET_KEY` (or `T_PORKBUN_API_KEY` + `T_PORKBUN_SECRET_KEY`)
+2. `T_PORKBUN_ENV_FILE`
 3. `../_env/secrets/porkbun.env`
 4. `./porkbun.env`
 5. `./.env`
@@ -148,7 +148,7 @@ PORKBUN_SECRET_KEY=sk1_...
 
 ## Error Handling
 
-- If keys are missing, instruct user to set `../_env/secrets/porkbun.env` (or `PORKCTL_ENV_FILE`).
+- If keys are missing, instruct user to set `../_env/secrets/porkbun.env` (or `T_PORKBUN_ENV_FILE`).
 - If API returns an error, show the exact message and do not retry registration automatically.
 - If a domain is unavailable, suggest alternatives and run `check-bulk`.
 - If registration is requested without explicit user confirmation in conversation, stop and ask before running `register`.

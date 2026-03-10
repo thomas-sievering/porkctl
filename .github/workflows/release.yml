@@ -67,13 +67,13 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           mkdir -p dist
-          BIN_NAME="porkctl-${GOOS}-${GOARCH}${{ matrix.ext }}"
+          BIN_NAME="t-porkbun-${GOOS}-${GOARCH}${{ matrix.ext }}"
           go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "dist/${BIN_NAME}" .
 
       - name: package
         run: |
           mkdir -p artifacts
-          BASE="porkctl-${{ matrix.goos }}-${{ matrix.goarch }}"
+          BASE="t-porkbun-${{ matrix.goos }}-${{ matrix.goarch }}"
           if [ "${{ matrix.goos }}" = "windows" ]; then
             cp "dist/${BASE}.exe" "artifacts/${BASE}.exe"
             cd artifacts

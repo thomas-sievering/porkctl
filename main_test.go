@@ -55,7 +55,7 @@ func TestParseCheckResponse(t *testing.T) {
 func TestLoadKeysPrefersEnvironment(t *testing.T) {
 	t.Setenv("PORKBUN_API_KEY", "env_pk")
 	t.Setenv("PORKBUN_SECRET_KEY", "env_sk")
-	t.Setenv("PORKCTL_ENV_FILE", "C:/this/path/does/not/exist.env")
+	t.Setenv("T_PORKBUN_ENV_FILE", "C:/this/path/does/not/exist.env")
 
 	keys, err := loadKeys()
 	if err != nil {
@@ -178,8 +178,8 @@ func TestConfigPath(t *testing.T) {
 	if !filepath.IsAbs(p) {
 		t.Fatalf("expected absolute path, got %q", p)
 	}
-	if filepath.Base(p) != "porkctl" {
-		t.Fatalf("expected path ending in 'porkctl', got %q", p)
+	if filepath.Base(p) != "t-porkbun" {
+		t.Fatalf("expected path ending in 't-porkbun', got %q", p)
 	}
 }
 
